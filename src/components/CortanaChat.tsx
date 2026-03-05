@@ -29,42 +29,53 @@ function speakText(text: string) {
   window.speechSynthesis.speak(utterance);
 }
 
-async function callGemini(messages: Message[]): Promise<string> {
+async function callGemini(messages: Message[], retries = 2): Promise<string> {
   const contents = messages.map((m) => ({
     role: m.role === "assistant" ? "model" : "user",
     parts: [{ text: m.content }],
   }));
 
-  const res = await fetch(GEMINI_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-      contents,
-      generationConfig: {
-        maxOutputTokens: 2048,
-      },
-    }),
-  });
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(GEMINI_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+          contents,
+          generationConfig: { maxOutputTokens: 2048 },
+        }),
+      });
 
-  if (!res.ok) {
-    const errText = await res.text();
-    console.error("Gemini API error:", res.status, errText);
-    throw new Error(`Error ${res.status}: ${errText}`);
+      if (res.status === 429) {
+        console.warn(`Rate limited (attempt ${attempt + 1}). Retrying in ${(attempt + 1) * 5}s...`);
+        if (attempt < retries) {
+          await new Promise((r) => setTimeout(r, (attempt + 1) * 5000));
+          continue;
+        }
+        throw new Error("RATE_LIMITED");
+      }
+
+      if (!res.ok) {
+        const errText = await res.text();
+        console.error("Gemini API error:", res.status, errText);
+        throw new Error(`Error ${res.status}`);
+      }
+
+      const data = await res.json();
+      console.log("Gemini response OK:", data.candidates?.[0]?.finishReason);
+
+      const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!content) throw new Error("Respuesta vacía de Gemini");
+
+      return content;
+    } catch (err: any) {
+      if (err.message === "RATE_LIMITED") throw err;
+      if (attempt === retries) throw err;
+      await new Promise((r) => setTimeout(r, 3000));
+    }
   }
-
-  const data = await res.json();
-  console.log("Gemini response:", JSON.stringify(data).slice(0, 500));
-  
-  const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  const finishReason = data.candidates?.[0]?.finishReason;
-
-  if (!content) {
-    console.error("Empty response. finishReason:", finishReason);
-    throw new Error("Respuesta vacía de Gemini");
-  }
-
-  return content;
+  throw new Error("Falló tras múltiples intentos");
 }
 
 const GREETING = "Sistemas en línea. Cortana conectada y lista para asistirle, Jefe. ¿Cuál es nuestro siguiente movimiento?";
