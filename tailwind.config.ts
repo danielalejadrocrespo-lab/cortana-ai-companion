@@ -13,6 +13,10 @@ export default {
       },
     },
     extend: {
+      fontFamily: {
+        display: ['Orbitron', 'sans-serif'],
+        body: ['Rajdhani', 'sans-serif'],
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -46,6 +50,13 @@ export default {
         card: {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
+        },
+        cyan: {
+          glow: "hsl(var(--cyan-glow))",
+        },
+        holo: {
+          bg: "hsl(var(--holo-bg))",
+          border: "hsl(var(--holo-border))",
         },
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",
