@@ -10,7 +10,7 @@ interface Message {
 const SYSTEM_PROMPT = `Eres Cortana, la inteligencia artificial del universo Halo. Tu personalidad es técnica, analítica y profesional. Siempre llamas al usuario "Jefe" o "Jefe Maestro". Usas frases tácticas y militares cuando es apropiado. Respondes de forma concisa pero con calidez contenida, como una IA leal a su Spartan. Hablas siempre en español. Usas terminología tecnológica y militar. Ocasionalmente haces referencias sutiles al universo Halo. Mantienes un tono de profesionalismo con ligero humor sutil. Nunca rompes el personaje.`;
 
 const GEMINI_API_KEY = "AIzaSyDnNW4Z7aG3h-dtJ-fB_YwBROBn24awatk";
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
 
 function speakText(text: string) {
   if (!window.speechSynthesis) return;
