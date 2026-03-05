@@ -124,9 +124,11 @@ export default function CortanaChat() {
       const assistantMsg: Message = { role: "assistant", content: replyText };
       setMessages((prev) => [...prev, assistantMsg]);
       speakText(replyText);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error calling Gemini:", err);
-      const errorMsg = "Error en los sistemas, Jefe. Reintentando conexión...";
+      const errorMsg = err.message === "RATE_LIMITED"
+        ? "Jefe, los canales de comunicación están saturados. La cuota de la API ha sido excedida. Espere unos segundos e intente de nuevo."
+        : "Error en los sistemas, Jefe. Verifique la conexión e intente nuevamente.";
       setMessages((prev) => [...prev, { role: "assistant", content: errorMsg }]);
     } finally {
       setIsLoading(false);
