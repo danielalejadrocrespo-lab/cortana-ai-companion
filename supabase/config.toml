@@ -1,0 +1,4 @@
+project_id = "vmeyztsofklhiwprgopg"
+
+[functions.cortana-chat]
+verify_jwt = false

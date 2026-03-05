@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import cortanaGif from "@/assets/cortana.gif";
 import { Send, X } from "lucide-react";
 
@@ -6,11 +7,6 @@ interface Message {
   role: "user" | "assistant";
   content: string;
 }
-
-const SYSTEM_PROMPT = `Eres Cortana, la inteligencia artificial del universo Halo. Tu personalidad es técnica, analítica y profesional. Siempre llamas al usuario "Jefe" o "Jefe Maestro". Usas frases tácticas y militares cuando es apropiado. Respondes de forma concisa pero con calidez contenida, como una IA leal a su Spartan. Hablas siempre en español. Usas terminología tecnológica y militar. Ocasionalmente haces referencias sutiles al universo Halo. Mantienes un tono de profesionalismo con ligero humor sutil. Nunca rompes el personaje.`;
-
-const GEMINI_API_KEY = "AIzaSyDlI3Q6df2I0FA_F6g9hnwtaM-CpsuVnTc";
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
 
 function speakText(text: string) {
   if (!window.speechSynthesis) return;
@@ -29,55 +25,6 @@ function speakText(text: string) {
   window.speechSynthesis.speak(utterance);
 }
 
-async function callGemini(messages: Message[], retries = 2): Promise<string> {
-  const contents = messages.map((m) => ({
-    role: m.role === "assistant" ? "model" : "user",
-    parts: [{ text: m.content }],
-  }));
-
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const res = await fetch(GEMINI_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-          contents,
-          generationConfig: { maxOutputTokens: 2048 },
-        }),
-      });
-
-      if (res.status === 429) {
-        console.warn(`Rate limited (attempt ${attempt + 1}). Retrying in ${(attempt + 1) * 5}s...`);
-        if (attempt < retries) {
-          await new Promise((r) => setTimeout(r, (attempt + 1) * 5000));
-          continue;
-        }
-        throw new Error("RATE_LIMITED");
-      }
-
-      if (!res.ok) {
-        const errText = await res.text();
-        console.error("Gemini API error:", res.status, errText);
-        throw new Error(`Error ${res.status}`);
-      }
-
-      const data = await res.json();
-      console.log("Gemini response OK:", data.candidates?.[0]?.finishReason);
-
-      const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!content) throw new Error("Respuesta vacía de Gemini");
-
-      return content;
-    } catch (err: any) {
-      if (err.message === "RATE_LIMITED") throw err;
-      if (attempt === retries) throw err;
-      await new Promise((r) => setTimeout(r, 3000));
-    }
-  }
-  throw new Error("Falló tras múltiples intentos");
-}
-
 const GREETING = "Sistemas en línea. Cortana conectada y lista para asistirle, Jefe. ¿Cuál es nuestro siguiente movimiento?";
 
 export default function CortanaChat() {
@@ -92,7 +39,6 @@ export default function CortanaChat() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Load voices
   useEffect(() => {
     const loadVoices = () => window.speechSynthesis?.getVoices();
     loadVoices();
@@ -120,22 +66,36 @@ export default function CortanaChat() {
     setIsLoading(true);
 
     try {
-      const replyText = await callGemini(updatedMessages);
+      const { data, error } = await supabase.functions.invoke("cortana-chat", {
+        body: {
+          messages: updatedMessages.map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
+        },
+      });
+
+      if (error) throw error;
+
+      if (data?.error) {
+        throw new Error(data.error);
+      }
+
+      const replyText = data?.reply;
+      if (!replyText) throw new Error("Sin respuesta del servidor");
+
       const assistantMsg: Message = { role: "assistant", content: replyText };
       setMessages((prev) => [...prev, assistantMsg]);
       speakText(replyText);
     } catch (err: any) {
-      console.error("Error calling Gemini:", err);
-      const errorMsg = err.message === "RATE_LIMITED"
-        ? "Jefe, los canales de comunicación están saturados. La cuota de la API ha sido excedida. Espere unos segundos e intente de nuevo."
-        : "Error en los sistemas, Jefe. Verifique la conexión e intente nuevamente.";
+      console.error("Error:", err);
+      const errorMsg = "Error en los sistemas, Jefe. Verifique la conexión e intente nuevamente.";
       setMessages((prev) => [...prev, { role: "assistant", content: errorMsg }]);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Show start button if not greeted yet
   if (!hasGreeted) {
     return (
       <button
@@ -154,7 +114,6 @@ export default function CortanaChat() {
 
   return (
     <>
-      {/* Avatar toggle */}
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="fixed bottom-6 right-6 z-50 w-20 h-20 rounded-full overflow-hidden border-2 border-primary animate-cyan-pulse cursor-pointer transition-transform hover:scale-110 focus:outline-none"
@@ -163,7 +122,6 @@ export default function CortanaChat() {
         <img src={cortanaGif} alt="Cortana" className="w-full h-full object-cover" />
       </button>
 
-      {/* Chat window */}
       {isOpen && (
         <div
           className="fixed bottom-28 right-6 z-50 w-[380px] max-h-[520px] flex flex-col rounded-2xl border border-holo-border overflow-hidden animate-holo-flicker"
@@ -173,7 +131,6 @@ export default function CortanaChat() {
             boxShadow: "0 0 40px hsla(190,100%,50%,0.15), inset 0 1px 0 hsla(190,100%,50%,0.1)",
           }}
         >
-          {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-holo-border relative z-10">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-full overflow-hidden border border-primary">
@@ -189,7 +146,6 @@ export default function CortanaChat() {
             </button>
           </div>
 
-          {/* Messages */}
           <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 relative z-10 min-h-[300px]">
             {messages.map((msg, i) => (
               <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
@@ -222,7 +178,6 @@ export default function CortanaChat() {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Input */}
           <div className="px-4 py-3 border-t border-holo-border relative z-10">
             <div className="flex gap-2">
               <input
