@@ -112,8 +112,11 @@ export default function CortanaChat() {
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
       const transcript = event.results[0][0].transcript;
-      setInput(transcript);
       setIsListening(false);
+      // Auto-send the voice message
+      if (transcript.trim()) {
+        sendMessageWithText(transcript.trim());
+      }
     };
 
     recognition.onerror = () => setIsListening(false);
