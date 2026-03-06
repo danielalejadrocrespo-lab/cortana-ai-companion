@@ -95,7 +95,7 @@ export default function CortanaChat() {
       return;
     }
 
-    const SpeechRecognition = window.SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
       alert("Tu navegador no soporta reconocimiento de voz.");
       return;
