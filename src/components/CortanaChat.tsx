@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import cortanaGif from "@/assets/cortana.gif";
-import { Send, X } from "lucide-react";
+import { Send, X, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
 
 interface Message {
   role: "user" | "assistant";
@@ -17,24 +17,6 @@ function cleanTextForSpeech(text: string): string {
     .trim();
 }
 
-function speakText(text: string) {
-  if (!window.speechSynthesis) return;
-  window.speechSynthesis.cancel();
-  const cleanText = cleanTextForSpeech(text);
-  const utterance = new SpeechSynthesisUtterance(cleanText);
-  utterance.lang = "es-ES";
-  utterance.pitch = 1.1;
-  utterance.rate = 1.0;
-
-  const voices = window.speechSynthesis.getVoices();
-  const spanishFemale = voices.find(
-    (v) => v.lang.startsWith("es") && v.name.toLowerCase().includes("female")
-  ) || voices.find((v) => v.lang.startsWith("es")) || voices[0];
-  if (spanishFemale) utterance.voice = spanishFemale;
-
-  window.speechSynthesis.speak(utterance);
-}
-
 const GREETING = "Sistemas en línea. Cortana conectada y lista para asistirle, Jefe. ¿Cuál es nuestro siguiente movimiento?";
 
 export default function CortanaChat() {
@@ -43,7 +25,16 @@ export default function CortanaChat() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [hasGreeted, setHasGreeted] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isListening, setIsListening] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<any>(null);
+  const isMutedRef = useRef(false);
+
+  // Keep ref in sync
+  useEffect(() => {
+    isMutedRef.current = isMuted;
+  }, [isMuted]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -56,6 +47,79 @@ export default function CortanaChat() {
     return () => window.speechSynthesis?.removeEventListener("voiceschanged", loadVoices);
   }, []);
 
+  // Cancel speech when chat closes
+  useEffect(() => {
+    if (!isOpen) {
+      window.speechSynthesis?.cancel();
+    }
+  }, [isOpen]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      window.speechSynthesis?.cancel();
+      recognitionRef.current?.abort();
+    };
+  }, []);
+
+  const speakText = useCallback((text: string) => {
+    if (!window.speechSynthesis || isMutedRef.current) return;
+    window.speechSynthesis.cancel();
+    const cleanText = cleanTextForSpeech(text);
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.lang = "es-ES";
+    utterance.pitch = 1.1;
+    utterance.rate = 1.0;
+
+    const voices = window.speechSynthesis.getVoices();
+    const spanishFemale = voices.find(
+      (v) => v.lang.startsWith("es") && v.name.toLowerCase().includes("female")
+    ) || voices.find((v) => v.lang.startsWith("es")) || voices[0];
+    if (spanishFemale) utterance.voice = spanishFemale;
+
+    window.speechSynthesis.speak(utterance);
+  }, []);
+
+  const toggleMute = useCallback(() => {
+    setIsMuted((prev) => {
+      const next = !prev;
+      if (next) window.speechSynthesis?.cancel();
+      return next;
+    });
+  }, []);
+
+  const toggleListening = useCallback(() => {
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+      return;
+    }
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Tu navegador no soporta reconocimiento de voz.");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = "es-ES";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      const transcript = event.results[0][0].transcript;
+      setInput(transcript);
+      setIsListening(false);
+    };
+
+    recognition.onerror = () => setIsListening(false);
+    recognition.onend = () => setIsListening(false);
+
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsListening(true);
+  }, [isListening]);
+
   const handleStartProtocol = useCallback(() => {
     if (hasGreeted) return;
     setHasGreeted(true);
@@ -63,7 +127,7 @@ export default function CortanaChat() {
     const greetMsg: Message = { role: "assistant", content: GREETING };
     setMessages([greetMsg]);
     setTimeout(() => speakText(GREETING), 300);
-  }, [hasGreeted]);
+  }, [hasGreeted, speakText]);
 
   const sendMessage = async () => {
     const text = input.trim();
@@ -86,10 +150,7 @@ export default function CortanaChat() {
       });
 
       if (error) throw error;
-
-      if (data?.error) {
-        throw new Error(data.error);
-      }
+      if (data?.error) throw new Error(data.error);
 
       const replyText = data?.reply;
       if (!replyText) throw new Error("Sin respuesta del servidor");
@@ -151,9 +212,19 @@ export default function CortanaChat() {
                 <p className="text-[10px] text-muted-foreground tracking-widest uppercase">IA — UNSC</p>
               </div>
             </div>
-            <button onClick={() => setIsOpen(false)} className="text-muted-foreground hover:text-primary transition-colors">
-              <X size={18} />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={toggleMute}
+                className="p-1.5 rounded-md text-muted-foreground hover:text-primary transition-colors"
+                aria-label={isMuted ? "Activar voz" : "Silenciar voz"}
+                title={isMuted ? "Activar voz" : "Silenciar voz"}
+              >
+                {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+              </button>
+              <button onClick={() => setIsOpen(false)} className="p-1.5 rounded-md text-muted-foreground hover:text-primary transition-colors">
+                <X size={18} />
+              </button>
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 relative z-10 min-h-[300px]">
@@ -190,6 +261,17 @@ export default function CortanaChat() {
 
           <div className="px-4 py-3 border-t border-holo-border relative z-10">
             <div className="flex gap-2">
+              <button
+                onClick={toggleListening}
+                className={`p-2 rounded-lg border transition-colors ${
+                  isListening
+                    ? "bg-destructive/20 text-destructive border-destructive/30 animate-pulse"
+                    : "bg-primary/20 text-primary border-primary/30 hover:bg-primary/30"
+                }`}
+                title={isListening ? "Detener micrófono" : "Hablar"}
+              >
+                {isListening ? <MicOff size={16} /> : <Mic size={16} />}
+              </button>
               <input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
