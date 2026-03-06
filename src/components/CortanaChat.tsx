@@ -68,14 +68,18 @@ export default function CortanaChat() {
     const cleanText = cleanTextForSpeech(text);
     const utterance = new SpeechSynthesisUtterance(cleanText);
     utterance.lang = "es-ES";
-    utterance.pitch = 1.1;
-    utterance.rate = 1.0;
+    // Tuned to emulate Cortana's calm, slightly ethereal AI voice
+    utterance.pitch = 1.25;
+    utterance.rate = 0.95;
 
     const voices = window.speechSynthesis.getVoices();
-    const spanishFemale = voices.find(
-      (v) => v.lang.startsWith("es") && v.name.toLowerCase().includes("female")
+    // Priority: find a smooth female Spanish voice similar to Cortana's tone
+    const cortanaLike = voices.find(
+      (v) => v.lang.startsWith("es") && /microsoft|google|sabina|lucia|helena|female/i.test(v.name)
+    ) || voices.find(
+      (v) => v.lang.startsWith("es") && !v.name.toLowerCase().includes("male")
     ) || voices.find((v) => v.lang.startsWith("es")) || voices[0];
-    if (spanishFemale) utterance.voice = spanishFemale;
+    if (cortanaLike) utterance.voice = cortanaLike;
 
     window.speechSynthesis.speak(utterance);
   }, []);
