@@ -8,10 +8,20 @@ interface Message {
   content: string;
 }
 
+function cleanTextForSpeech(text: string): string {
+  return text
+    .replace(/[*_#`~>\[\](){}|]/g, "")
+    .replace(/\n{2,}/g, ". ")
+    .replace(/\n/g, ", ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 function speakText(text: string) {
   if (!window.speechSynthesis) return;
   window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
+  const cleanText = cleanTextForSpeech(text);
+  const utterance = new SpeechSynthesisUtterance(cleanText);
   utterance.lang = "es-ES";
   utterance.pitch = 1.1;
   utterance.rate = 1.0;
