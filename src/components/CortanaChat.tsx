@@ -68,14 +68,18 @@ export default function CortanaChat() {
     const cleanText = cleanTextForSpeech(text);
     const utterance = new SpeechSynthesisUtterance(cleanText);
     utterance.lang = "es-ES";
-    utterance.pitch = 1.1;
-    utterance.rate = 1.0;
+    // Tuned to emulate Cortana's calm, slightly ethereal AI voice
+    utterance.pitch = 1.25;
+    utterance.rate = 0.95;
 
     const voices = window.speechSynthesis.getVoices();
-    const spanishFemale = voices.find(
-      (v) => v.lang.startsWith("es") && v.name.toLowerCase().includes("female")
+    // Priority: find a smooth female Spanish voice similar to Cortana's tone
+    const cortanaLike = voices.find(
+      (v) => v.lang.startsWith("es") && /microsoft|google|sabina|lucia|helena|female/i.test(v.name)
+    ) || voices.find(
+      (v) => v.lang.startsWith("es") && !v.name.toLowerCase().includes("male")
     ) || voices.find((v) => v.lang.startsWith("es")) || voices[0];
-    if (spanishFemale) utterance.voice = spanishFemale;
+    if (cortanaLike) utterance.voice = cortanaLike;
 
     window.speechSynthesis.speak(utterance);
   }, []);
@@ -108,8 +112,11 @@ export default function CortanaChat() {
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
       const transcript = event.results[0][0].transcript;
-      setInput(transcript);
       setIsListening(false);
+      // Auto-send the voice message
+      if (transcript.trim()) {
+        sendMessageWithText(transcript.trim());
+      }
     };
 
     recognition.onerror = () => setIsListening(false);
@@ -129,42 +136,51 @@ export default function CortanaChat() {
     setTimeout(() => speakText(GREETING), 300);
   }, [hasGreeted, speakText]);
 
-  const sendMessage = async () => {
-    const text = input.trim();
+  const sendMessageWithText = useCallback(async (text: string) => {
     if (!text || isLoading) return;
 
     const userMsg: Message = { role: "user", content: text };
-    const updatedMessages = [...messages, userMsg];
-    setMessages(updatedMessages);
+    setMessages((prev) => {
+      const updatedMessages = [...prev, userMsg];
+      // Fire the API call with the updated messages
+      (async () => {
+        setIsLoading(true);
+        try {
+          const { data, error } = await supabase.functions.invoke("cortana-chat", {
+            body: {
+              messages: updatedMessages.map((m) => ({
+                role: m.role,
+                content: m.content,
+              })),
+            },
+          });
+
+          if (error) throw error;
+          if (data?.error) throw new Error(data.error);
+
+          const replyText = data?.reply;
+          if (!replyText) throw new Error("Sin respuesta del servidor");
+
+          const assistantMsg: Message = { role: "assistant", content: replyText };
+          setMessages((prev) => [...prev, assistantMsg]);
+          speakText(replyText);
+        } catch (err: any) {
+          console.error("Error:", err);
+          const errorMsg = "Error en los sistemas, Jefe. Verifique la conexión e intente nuevamente.";
+          setMessages((prev) => [...prev, { role: "assistant", content: errorMsg }]);
+        } finally {
+          setIsLoading(false);
+        }
+      })();
+      return updatedMessages;
+    });
     setInput("");
-    setIsLoading(true);
+  }, [isLoading, speakText]);
 
-    try {
-      const { data, error } = await supabase.functions.invoke("cortana-chat", {
-        body: {
-          messages: updatedMessages.map((m) => ({
-            role: m.role,
-            content: m.content,
-          })),
-        },
-      });
-
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-
-      const replyText = data?.reply;
-      if (!replyText) throw new Error("Sin respuesta del servidor");
-
-      const assistantMsg: Message = { role: "assistant", content: replyText };
-      setMessages((prev) => [...prev, assistantMsg]);
-      speakText(replyText);
-    } catch (err: any) {
-      console.error("Error:", err);
-      const errorMsg = "Error en los sistemas, Jefe. Verifique la conexión e intente nuevamente.";
-      setMessages((prev) => [...prev, { role: "assistant", content: errorMsg }]);
-    } finally {
-      setIsLoading(false);
-    }
+  const sendMessage = async () => {
+    const text = input.trim();
+    if (!text) return;
+    sendMessageWithText(text);
   };
 
   if (!hasGreeted) {
