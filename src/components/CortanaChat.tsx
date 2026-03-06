@@ -136,42 +136,51 @@ export default function CortanaChat() {
     setTimeout(() => speakText(GREETING), 300);
   }, [hasGreeted, speakText]);
 
-  const sendMessage = async () => {
-    const text = input.trim();
+  const sendMessageWithText = useCallback(async (text: string) => {
     if (!text || isLoading) return;
 
     const userMsg: Message = { role: "user", content: text };
-    const updatedMessages = [...messages, userMsg];
-    setMessages(updatedMessages);
+    setMessages((prev) => {
+      const updatedMessages = [...prev, userMsg];
+      // Fire the API call with the updated messages
+      (async () => {
+        setIsLoading(true);
+        try {
+          const { data, error } = await supabase.functions.invoke("cortana-chat", {
+            body: {
+              messages: updatedMessages.map((m) => ({
+                role: m.role,
+                content: m.content,
+              })),
+            },
+          });
+
+          if (error) throw error;
+          if (data?.error) throw new Error(data.error);
+
+          const replyText = data?.reply;
+          if (!replyText) throw new Error("Sin respuesta del servidor");
+
+          const assistantMsg: Message = { role: "assistant", content: replyText };
+          setMessages((prev) => [...prev, assistantMsg]);
+          speakText(replyText);
+        } catch (err: any) {
+          console.error("Error:", err);
+          const errorMsg = "Error en los sistemas, Jefe. Verifique la conexión e intente nuevamente.";
+          setMessages((prev) => [...prev, { role: "assistant", content: errorMsg }]);
+        } finally {
+          setIsLoading(false);
+        }
+      })();
+      return updatedMessages;
+    });
     setInput("");
-    setIsLoading(true);
+  }, [isLoading, speakText]);
 
-    try {
-      const { data, error } = await supabase.functions.invoke("cortana-chat", {
-        body: {
-          messages: updatedMessages.map((m) => ({
-            role: m.role,
-            content: m.content,
-          })),
-        },
-      });
-
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-
-      const replyText = data?.reply;
-      if (!replyText) throw new Error("Sin respuesta del servidor");
-
-      const assistantMsg: Message = { role: "assistant", content: replyText };
-      setMessages((prev) => [...prev, assistantMsg]);
-      speakText(replyText);
-    } catch (err: any) {
-      console.error("Error:", err);
-      const errorMsg = "Error en los sistemas, Jefe. Verifique la conexión e intente nuevamente.";
-      setMessages((prev) => [...prev, { role: "assistant", content: errorMsg }]);
-    } finally {
-      setIsLoading(false);
-    }
+  const sendMessage = async () => {
+    const text = input.trim();
+    if (!text) return;
+    sendMessageWithText(text);
   };
 
   if (!hasGreeted) {
